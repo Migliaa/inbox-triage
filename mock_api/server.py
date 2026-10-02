@@ -81,7 +81,7 @@ class Lead(BaseModel):
 
 @app.get("/inbox")
 def get_inbox(_: None = Depends(require_read)) -> list[dict]:
-    return json.loads(FIXTURES.read_text())
+    return json.loads(FIXTURES.read_text(encoding="utf-8"))
 
 
 @app.post("/mail/send")

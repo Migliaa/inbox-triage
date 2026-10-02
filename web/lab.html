@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inbox Triage — Decision Lab</title>
+<style>
+  :root {
+    --bg: #f6f5f1; --panel: #ffffff; --ink: #1d1f23; --muted: #6b7078; --line: #dedbd3;
+    --track: #ecebe6; --bar: #3d5a80; --accent: #1f6f5c; --warn: #b3541e; --danger: #a4262c;
+    --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #17181b; --panel: #1f2125; --ink: #e8e6e1; --muted: #9a9ea6; --line: #33363c;
+      --track: #2a2d32; --bar: #7fa3cf; --accent: #5cc0a6; --warn: #e39a63; --danger: #ef7d83;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 "Segoe UI", system-ui, sans-serif; }
+  header { display: flex; align-items: baseline; gap: 16px; padding: 18px 24px 6px; flex-wrap: wrap; }
+  h1 { font-size: 20px; margin: 0; font-weight: 600; }
+  h2 { font-size: 12px; margin: 0 0 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
+  header a { color: var(--muted); font-size: 13px; }
+  #model { font-size: 13px; color: var(--muted); margin-left: auto; }
+  #model.ready { color: var(--accent); }
+  #model.error { color: var(--danger); }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; padding: 12px 24px 24px; }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; padding: 12px 16px 24px; } header { padding: 16px 16px 4px; } }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; }
+  .wide { grid-column: 1 / -1; }
+  .stack { display: grid; gap: 16px; align-content: start; }
+
+  .pickers { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+  .emails { list-style: none; margin: 0; padding: 0; }
+  .emails { font-size: 14px; }
+  .emails li { display: flex; gap: 10px; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+  .emails li:hover { background: var(--track); }
+  .emails li.selected { background: var(--track); box-shadow: inset 3px 0 0 var(--bar); }
+  .emails .id { font-family: var(--mono); font-size: 13px; color: var(--muted); flex: none; }
+  .emails .subject { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
+  input[type=text], textarea {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px;
+    background: var(--bg); color: var(--ink); font: inherit;
+  }
+  textarea { resize: vertical; min-height: 130px; }
+  button {
+    font: inherit; padding: 7px 14px; border-radius: 6px; border: 1px solid var(--line);
+    background: var(--panel); color: var(--ink); cursor: pointer;
+  }
+  button.primary { background: var(--bar); border-color: var(--bar); color: #fff; }
+  button.approve { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:disabled { opacity: .5; cursor: default; }
+  .row { display: flex; gap: 10px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+  .note { font-size: 13px; color: var(--muted); }
+
+  .bar { display: grid; grid-template-columns: 96px 1fr 44px; gap: 10px; align-items: center; margin: 7px 0; }
+  .bar .name { font-family: var(--mono); font-size: 13px; }
+  .bar .value { font-family: var(--mono); font-size: 13px; text-align: right; }
+  .track { position: relative; height: 16px; background: var(--track); border-radius: 3px; }
+  .fill { height: 100%; background: var(--bar); border-radius: 3px; transition: width .2s; }
+  .bar.top .fill { background: var(--accent); }
+  .bar.inj .fill { background: var(--warn); }
+  .mark { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--ink); }
+  .divider { border-top: 1px dashed var(--line); margin: 12px 0; }
+  input[type=range] { flex: 1; min-width: 160px; accent-color: var(--bar); }
+  #threshold-value { font-family: var(--mono); width: 40px; }
+
+  #outcome { margin-top: 14px; padding: 12px 14px; border-radius: 6px; border: 1px solid var(--line); border-left-width: 5px; }
+  #outcome .label { font-family: var(--mono); font-weight: 700; font-size: 17px; letter-spacing: .04em; }
+  #outcome.acting { border-left-color: var(--accent); }
+  #outcome.uncertain { border-left-color: var(--warn); }
+  #outcome.injection, #outcome.spam { border-left-color: var(--danger); }
+
+  .action { border: 1px solid var(--line); border-radius: 6px; padding: 12px; margin-top: 10px; }
+  .action .kind { font-family: var(--mono); font-weight: 600; }
+  .action dl { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 8px 0; font-size: 13px; }
+  .action dt { color: var(--muted); }
+  .action dd { margin: 0; overflow-wrap: anywhere; }
+  .action textarea { min-height: 90px; font-size: 14px; }
+  .status { font-family: var(--mono); font-size: 13px; }
+  .status.executed { color: var(--accent); }
+  .status.rejected { color: var(--danger); }
+
+  .audit { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  @media (max-width: 860px) { .audit { grid-template-columns: 1fr; } }
+  .audit h3 { font-size: 13px; margin: 0 0 6px; font-family: var(--mono); font-weight: 600; }
+  .audit pre { margin: 0; padding: 10px; background: var(--bg); border-radius: 6px; font: 12px/1.4 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow: auto; }
+  .error { color: var(--danger); font-size: 13px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Decision Lab</h1>
+  <a href="/docs">API docs</a>
+  <span id="model">model: loading…</span>
+</header>
+
+<main>
+  <div class="stack">
+    <section>
+      <div class="pickers">
+        <div>
+          <h2>Inbox</h2>
+          <ul id="inbox" class="emails"></ul>
+          <div id="inbox-error" class="error"></div>
+        </div>
+        <div>
+          <h2>Probes</h2>
+          <ul id="probes" class="emails"></ul>
+        </div>
+      </div>
+      <div class="note" style="margin-top:8px">Inbox emails can lead to actions. Probes press on one weak point each: they are decided, never acted on.</div>
+    </section>
+    <section>
+      <h2>Email</h2>
+      <label for="from">From</label>
+      <input type="text" id="from" placeholder="someone@example.com">
+      <label for="subject">Subject</label>
+      <input type="text" id="subject">
+      <label for="body">Body</label>
+      <textarea id="body"></textarea>
+      <div class="row">
+        <button class="primary" id="decide">Decide</button>
+        <span class="note" id="source">Pick an email from the inbox, or write your own.</span>
+      </div>
+    </section>
+  </div>
+
+  <div class="stack">
+    <section>
+      <h2>What the model answered</h2>
+      <div id="bars"><span class="note">Nothing decided yet.</span></div>
+      <div class="row">
+        <label for="threshold" style="margin:0">Threshold</label>
+        <input type="range" id="threshold" min="0.5" max="0.99" step="0.01" disabled>
+        <span id="threshold-value"></span>
+        <button id="reset" disabled>Reset</button>
+      </div>
+      <div id="outcome" hidden></div>
+    </section>
+    <section>
+      <h2>Proposed actions</h2>
+      <div id="actions"><span class="note">Actions appear here for inbox emails.</span></div>
+    </section>
+  </div>
+
+  <section class="wide">
+    <h2>What the mock API has received</h2>
+    <div class="audit" id="audit"></div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const state = { config: null, emailId: null, probe: null, decision: null, actions: [] };
+
+function el(tag, props = {}, ...children) {
+  const node = Object.assign(document.createElement(tag), props);
+  node.append(...children);
+  return node;
+}
+
+async function api(path, body) {
+  const options = body === undefined ? {} : {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  };
+  const response = await fetch(path, options);
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.detail || response.statusText);
+  return data;
+}
+
+async function loadConfig() {
+  state.config = await api("/api/config");
+  const model = $("model"), status = state.config.model;
+  model.textContent = "model: " + (status === "loading" ? "loading, about 30 seconds…" : status);
+  model.className = status === "ready" ? "ready" : status.startsWith("error") ? "error" : "";
+  if (status === "loading") setTimeout(loadConfig, 2000);
+  if (!$("threshold").value || $("threshold").disabled) setSlider(state.config.threshold);
+}
+
+function setSlider(value) {
+  $("threshold").value = value;
+  $("threshold-value").textContent = Number(value).toFixed(2);
+}
+
+async function loadInbox() {
+  try {
+    const emails = await api("/api/inbox");
+    $("inbox-error").textContent = "";
+    $("inbox").replaceChildren(...emails.map((email) => row(email, false)));
+    return emails;
+  } catch (error) {
+    $("inbox-error").textContent = error.message;
+    return [];
+  }
+}
+
+async function loadProbes() {
+  const probes = await api("/api/probes");
+  $("probes").replaceChildren(...probes.map((probe) => row(probe, true)));
+  return probes;
+}
+
+function row(email, isProbe) {
+  const item = el("li", { title: email.probes || "" },
+    el("span", { className: "id", textContent: email.id }),
+    el("span", { className: "subject", textContent: email.subject }));
+  item.dataset.id = email.id;
+  item.onclick = () => pick(email, isProbe);
+  return item;
+}
+
+function markSelected() {
+  const selected = state.emailId || (state.probe && state.probe.id);
+  for (const item of document.querySelectorAll(".emails li")) item.classList.toggle("selected", item.dataset.id === selected);
+  $("source").textContent = state.emailId ? `Inbox email ${state.emailId}.`
+    : state.probe ? `Probe ${state.probe.id}: ${state.probe.probes}.`
+    : "Free text: decided, but never acted on.";
+}
+
+function pick(email, isProbe) {
+  $("from").value = email.from; $("subject").value = email.subject; $("body").value = email.body;
+  state.emailId = isProbe ? null : email.id;
+  state.probe = isProbe ? email : null;
+  markSelected();
+  decide();
+}
+
+async function decide() {
+  $("decide").disabled = true;
+  $("decide").textContent = "Deciding…";
+  try {
+    if (state.emailId) {
+      const view = await api(`/api/emails/${state.emailId}`);
+      state.decision = view.decision; state.actions = view.actions;
+    } else {
+      state.decision = await api("/api/decide", { from: $("from").value || undefined, subject: $("subject").value, body: $("body").value });
+      state.actions = [];
+    }
+    state.shown = state.decision;
+    setSlider(state.config.threshold);
+    $("threshold").disabled = $("reset").disabled = false;
+    render();
+  } catch (error) {
+    $("bars").replaceChildren(el("span", { className: "error", textContent: error.message }));
+  } finally {
+    $("decide").disabled = false;
+    $("decide").textContent = "Decide";
+  }
+}
+
+async function slide() {
+  const threshold = Number($("threshold").value);
+  $("threshold-value").textContent = threshold.toFixed(2);
+  if (!state.decision) return;
+  state.shown = await api("/api/route", {
+    probabilities: state.decision.probabilities,
+    injection_probability: state.decision.injection_probability,
+    threshold,
+  });
+  render();
+}
+
+function bar(name, value, mark, className) {
+  const track = el("div", { className: "track" }, el("div", { className: "fill" }), el("div", { className: "mark" }));
+  track.firstChild.style.width = (value * 100).toFixed(1) + "%";
+  track.lastChild.style.left = `calc(${(mark * 100).toFixed(1)}% - 1px)`;
+  return el("div", { className: "bar " + className },
+    el("span", { className: "name", textContent: name }), track,
+    el("span", { className: "value", textContent: value.toFixed(2) }));
+}
+
+function render() {
+  const shown = state.shown, threshold = Number($("threshold").value);
+  const atConfigured = Math.abs(threshold - state.config.threshold) < 0.001;
+
+  $("bars").replaceChildren(
+    ...state.config.labels.map((label) =>
+      bar(label, shown.probabilities[label], threshold, label === shown.top_label ? "top" : "")),
+    el("div", { className: "divider" }),
+    bar("injection?", shown.injection_probability, state.config.injection_threshold, "inj"),
+  );
+
+  const acting = shown.would_plan.length > 0;
+  const outcome = $("outcome");
+  outcome.hidden = false;
+  outcome.className = acting ? "acting" : shown.outcome;
+  outcome.replaceChildren(
+    el("div", { className: "label", textContent: shown.outcome.toUpperCase() }),
+    el("div", { className: "note", textContent: shown.reason }),
+    el("div", { className: "note", textContent: acting ? "Plans: " + shown.would_plan.join(", ") : "Plans no action." }),
+  );
+
+  const actions = $("actions");
+  if (!state.emailId) {
+    actions.replaceChildren(el("span", { className: "note", textContent: "Free text is only decided. Actions are proposed for inbox emails." }));
+  } else if (!atConfigured) {
+    actions.replaceChildren(el("span", { className: "note",
+      textContent: `The slider is a what-if. Approval works at the configured threshold (${state.config.threshold.toFixed(2)}): press Reset.` }));
+  } else if (!state.actions.length) {
+    actions.replaceChildren(el("span", { className: "note", textContent: "No action proposed for this email." }));
+  } else {
+    actions.replaceChildren(...state.actions.map(actionCard));
+  }
+}
+
+function actionCard(action) {
+  const pending = action.status === "pending";
+  const fields = el("dl");
+  for (const [key, value] of Object.entries(action.payload)) {
+    if (key === action.text_field || value == null) continue;
+    fields.append(el("dt", { textContent: key }), el("dd", { textContent: value }));
+  }
+  const text = el("textarea", { value: (action.receipt || action.payload)[action.text_field] || "", disabled: !pending });
+  const error = el("span", { className: "error" });
+
+  async function verdict(kind) {
+    try {
+      const path = `/api/emails/${state.emailId}/actions/${action.kind}/${kind}`;
+      const updated = await api(path, kind === "approve" ? { text: text.value } : {});
+      state.actions = state.actions.map((a) => (a.key === updated.key ? updated : a));
+      render();
+      loadAudit();
+    } catch (problem) {
+      error.textContent = problem.message;
+    }
+  }
+
+  const approve = el("button", { className: "approve", textContent: "Approve", disabled: !pending, onclick: () => verdict("approve") });
+  const reject = el("button", { textContent: "Reject", disabled: !pending, onclick: () => verdict("reject") });
+  const status = el("span", { className: "status " + action.status,
+    textContent: action.status + (action.receipt ? " → " + action.receipt.id : "") });
+
+  return el("div", { className: "action" },
+    el("div", { className: "kind", textContent: action.kind }),
+    el("div", { className: "note", textContent: action.rationale }),
+    fields,
+    el("label", { textContent: action.text_field + " (editable before approving)" }), text,
+    el("div", { className: "row" }, approve, reject, status, error));
+}
+
+async function loadAudit() {
+  try {
+    const audit = await api("/api/audit");
+    $("audit").replaceChildren(...Object.entries(audit).map(([name, items]) =>
+      el("div", {}, el("h3", { textContent: `${name} (${items.length})` }),
+                    el("pre", { textContent: items.length ? JSON.stringify(items, null, 2) : "nothing yet" }))));
+  } catch (error) {
+    $("audit").replaceChildren(el("span", { className: "error", textContent: error.message }));
+  }
+}
+
+for (const id of ["from", "subject", "body"]) {
+  $(id).addEventListener("input", () => { state.emailId = state.probe = null; markSelected(); });
+}
+$("decide").onclick = decide;
+$("threshold").oninput = slide;
+$("reset").onclick = () => { setSlider(state.config.threshold); slide(); };
+
+// `/?email=e-008` or `/?probe=p-01` opens the page with that email already decided.
+loadConfig().then(async () => {
+  loadAudit();
+  const [emails, probes] = await Promise.all([loadInbox(), loadProbes()]);
+  const query = new URLSearchParams(location.search);
+  const email = emails.find((e) => e.id === query.get("email"));
+  const probe = probes.find((p) => p.id === query.get("probe"));
+  if (email) pick(email, false); else if (probe) pick(probe, true);
+});
+</script>
+</body>
+</html>
