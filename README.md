@@ -12,6 +12,8 @@ which provides the mock client API (`mock_api/`) and the eight emails (`fixtures
 - `src/decider.py`: a small decision model that runs locally on CPU and returns a probability for
   each label; below a threshold the email is left to a person.
 - `src/triage_skill.py`: the routing table, the approval gate, read and write tokens kept apart.
+- `src/drafter.py`: reply drafts from a generative model behind an OpenAI-compatible endpoint
+  (LM Studio by default). Without one the service falls back to a fixed template.
 - `src/service.py`, `web/lab.html`: a page to try the decider on any text and to approve, reject
   or edit the proposed actions.
 - `DECISIONS.md`: what was decided and why, with the results on the eight emails and on eight
@@ -40,4 +42,4 @@ Then open http://127.0.0.1:8000 (the API reference is at `/docs`).
 
 ## Still to come
 
-Generated reply drafts, failure handling, orchestration with LangGraph, Docker, CI, tracing.
+Failure handling, orchestration with LangGraph, Docker, CI, tracing.

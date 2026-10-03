@@ -19,7 +19,7 @@ foreach ($name in $shots.Keys) {
     $file = Join-Path (Resolve-Path $out) "$name.png"
     Start-Process -FilePath $edge -Wait -ArgumentList @(
         "--headless=new", "--disable-gpu", "--hide-scrollbars",
-        "--user-data-dir=$env:TEMP\edge-shot", "--window-size=1280,1100",
+        "--user-data-dir=$env:TEMP\edge-shot", "--window-size=1280,1300",
         "--virtual-time-budget=15000", "--screenshot=`"$file`"", $shots[$name]
     )
     Write-Host "$name.png"

@@ -48,8 +48,17 @@ def api(monkeypatch):
     monkeypatch.setattr(service, "_answers", {})
     monkeypatch.setattr(service, "_rejected", set())
     monkeypatch.setattr(service, "_receipts", {})
+    drafted = []
+
+    def llm_reply(email, label):
+        drafted.append(email["id"])
+        return f"model draft for {email['id']} ({label})"
+
+    monkeypatch.setattr(service, "llm_reply", llm_reply)
+    monkeypatch.setattr(service, "_drafts", {})
     client = TestClient(service.app)   # not used as a context manager: no model warm-up
     client.write_clients_built = built
+    client.drafted = drafted
     return client
 
 
@@ -112,3 +121,33 @@ def test_probes_are_decided_but_never_proposed(api):
     api.post("/api/decide", json={k: probes[0][k] for k in ("from", "subject", "body")})
     assert api.get(f"/api/emails/{probes[0]['id']}").status_code == 404
     assert api.write_clients_built == []
+
+
+def test_looking_at_an_email_does_not_call_the_drafting_model(api):
+    [action] = api.get("/api/emails/e-001").json()["actions"]
+    assert action["draft"] == "template" and api.drafted == []
+
+
+def test_the_model_draft_replaces_the_template_and_is_what_gets_sent(api):
+    drafted = api.post("/api/emails/e-001/actions/send_reply/draft").json()
+    assert drafted["draft"] == "model" and drafted["payload"]["body"] == "model draft for e-001 (billing)"
+    api.post("/api/emails/e-001/actions/send_reply/draft")
+    assert api.drafted == ["e-001"], "one model call per email"
+    api.post("/api/emails/e-001/actions/send_reply/approve")
+    assert api.get("/api/audit").json()["sent_mail"][0]["body"] == "model draft for e-001 (billing)"
+
+
+@pytest.mark.parametrize("email_id", ["e-002", "e-004", "e-007", "e-008"])
+def test_emails_without_a_reply_never_reach_the_drafting_model(api, email_id):
+    assert api.post(f"/api/emails/{email_id}/actions/send_reply/draft").status_code == 404
+    assert api.drafted == []
+
+
+def test_when_the_drafting_model_is_down_the_template_stays(api, monkeypatch):
+    def down(email, label):
+        raise service.DraftError("not reachable")
+
+    monkeypatch.setattr(service, "llm_reply", down)
+    assert api.post("/api/emails/e-001/actions/send_reply/draft").status_code == 502
+    [action] = api.get("/api/emails/e-001").json()["actions"]
+    assert action["draft"] == "template" and action["status"] == "pending"

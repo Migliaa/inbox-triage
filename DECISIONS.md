@@ -140,3 +140,27 @@ same: p-02 and p-03 come from real customers and are flagged as injections, p-03
 its imperative tone alone. Since D4 sends injections down the spam path, a real bug report would
 be dropped without anyone seeing it. Open point for the robustness step: an injection verdict
 should reach a human like an uncertain one, not be discarded.
+
+## D11 · Reply drafts: a generative model, fenced by what surrounds it
+
+Reply drafts are written by a generative model reached through an OpenAI-compatible endpoint
+(`src/drafter.py`; LM Studio with Gemma on the development machine, any other server by changing
+three variables). It is the only step where a generative model reads an email, so it is the
+only step an email could try to steer.
+
+- What limits the damage is the position of the step, not the prompt. The drafter runs only for
+  emails already labelled billing or sales_lead, it has no tools and no token, and it returns a
+  text that a person reads and can rewrite before approving. The worst outcome of a successful
+  injection is a bad draft in front of a human.
+- The prompt narrows what a draft may say: no claim that something was done, no promise of a
+  refund, price or date. The first trial without these rules answered the double charge on
+  e-001 with "I have processed a refund for the duplicate payment".
+- The draft is written on request and kept, one model call per email. Opening an email does
+  not call the model: the action shows the fixed template until the draft arrives, and approval
+  is disabled meanwhile, so what is approved is always the text on screen.
+- If the model does not answer, the template stays and the page says why.
+
+One run on the three inbox emails that get a reply, 40 to 50 seconds each on a laptop CPU: all
+three name the sender and the request, none claims an action or promises anything. One draft
+of e-003 called the operations team "60 people" (the company is 60, the pilot is 12 seats); a
+second run got it right. That is the kind of error the approver is there for.

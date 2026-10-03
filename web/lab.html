@@ -79,7 +79,7 @@
   .action dl { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 8px 0; font-size: 13px; }
   .action dt { color: var(--muted); }
   .action dd { margin: 0; overflow-wrap: anywhere; }
-  .action textarea { min-height: 90px; font-size: 14px; }
+  .action textarea { min-height: 190px; font-size: 14px; }
   .status { font-family: var(--mono); font-size: 13px; }
   .status.executed { color: var(--accent); }
   .status.rejected { color: var(--danger); }
@@ -155,7 +155,7 @@
 
 <script>
 const $ = (id) => document.getElementById(id);
-const state = { config: null, emailId: null, probe: null, decision: null, actions: [] };
+const state = { config: null, emailId: null, probe: null, decision: null, actions: [], drafting: {}, draftError: {} };
 
 function el(tag, props = {}, ...children) {
   const node = Object.assign(document.createElement(tag), props);
@@ -305,11 +305,30 @@ function render() {
     actions.replaceChildren(el("span", { className: "note", textContent: "No action proposed for this email." }));
   } else {
     actions.replaceChildren(...state.actions.map(actionCard));
+    state.actions.forEach(requestDraft);
+  }
+}
+
+// The reply starts as a fixed template; the drafting model replaces it, once per email.
+async function requestDraft(action) {
+  const key = action.key, emailId = state.emailId;
+  if (action.draft !== "template" || action.status !== "pending" || state.drafting[key] || state.draftError[key]) return;
+  state.drafting[key] = true;
+  render();
+  try {
+    const updated = await api(`/api/emails/${emailId}/actions/send_reply/draft`, {});
+    if (state.emailId === emailId) state.actions = state.actions.map((a) => (a.key === key ? updated : a));
+  } catch (problem) {
+    state.draftError[key] = problem.message;
+  } finally {
+    delete state.drafting[key];
+    if (state.emailId === emailId) render();
   }
 }
 
 function actionCard(action) {
-  const pending = action.status === "pending";
+  const drafting = Boolean(state.drafting[action.key]);
+  const pending = action.status === "pending" && !drafting;
   const fields = el("dl");
   for (const [key, value] of Object.entries(action.payload)) {
     if (key === action.text_field || value == null) continue;
@@ -317,6 +336,10 @@ function actionCard(action) {
   }
   const text = el("textarea", { value: (action.receipt || action.payload)[action.text_field] || "", disabled: !pending });
   const error = el("span", { className: "error" });
+  const origin = !action.draft || action.status !== "pending" ? ""
+    : drafting ? `Placeholder text. ${state.config.draft_model} is writing the draft, about a minute on a CPU…`
+    : action.draft === "model" ? `Draft written by ${state.config.draft_model}.`
+    : `Placeholder text: ${state.draftError[action.key] || "no draft yet"}.`;
 
   async function verdict(kind) {
     try {
@@ -340,6 +363,7 @@ function actionCard(action) {
     el("div", { className: "note", textContent: action.rationale }),
     fields,
     el("label", { textContent: action.text_field + " (editable before approving)" }), text,
+    el("div", { className: "note", textContent: origin }),
     el("div", { className: "row" }, approve, reject, status, error));
 }
 

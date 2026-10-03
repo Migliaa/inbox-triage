@@ -34,7 +34,10 @@ from pydantic import BaseModel, ConfigDict, Field
 load_dotenv()  # before importing the decider, which reads its settings at import time
 
 from src.decider import INJECTION_THRESHOLD, LABELS, THRESHOLD, Decision, ask_model, route  # noqa: E402
-from src.triage_skill import ROUTING, Ledger, ProposedAction, TriageClient, execute, plan_actions  # noqa: E402
+from src.drafter import MODEL as DRAFT_MODEL, DraftError, llm_reply  # noqa: E402
+from src.triage_skill import (  # noqa: E402
+    ROUTING, Ledger, ProposedAction, TriageClient, execute, plan_actions, template_reply,
+)
 
 API_BASE_URL = os.environ.get("API_BASE_URL", "http://127.0.0.1:8099")
 READ_TOKEN = os.environ.get("READ_TOKEN", "read-token-dev")
@@ -48,6 +51,9 @@ TEXT_FIELD = {"send_reply": "body", "send_alert": "message", "create_lead": "sum
 ledger = Ledger(Path(os.environ.get("LEDGER_PATH", "ledger.json")))
 _rejected: set[str] = set()
 _receipts: dict[str, dict] = {}
+# Reply drafts written by the model, by action key. Until one exists the template stands in.
+_drafts: dict[str, str] = {}
+_draft_lock = threading.Lock()
 
 _model_lock = threading.Lock()
 _answers: dict[tuple[str, str, str], tuple[dict[str, float], float]] = {}
@@ -141,6 +147,7 @@ def _action_json(action: ProposedAction) -> dict:
         "payload": action.payload,
         "rationale": action.rationale,
         "text_field": TEXT_FIELD[action.kind],
+        "draft": ("model" if action.key in _drafts else "template") if action.kind == "send_reply" else None,
         "status": _status(action.key),
         "receipt": _receipts.get(action.key),
     }
@@ -163,8 +170,13 @@ def _inbox_email(email_id: str) -> dict:
 def _proposed(email: dict) -> tuple[Decision, list[ProposedAction]]:
     """Decision at the configured threshold, and the actions it implies."""
     decision = route(*answers_for(email))
-    actions = plan_actions(decision.outcome, email) if decision.outcome in LABELS else []
+    actions = plan_actions(decision.outcome, email, _draft_or_template) if decision.outcome in LABELS else []
     return decision, actions
+
+
+def _draft_or_template(email: dict, label: str) -> str:
+    """The model's draft if it was already written, the template otherwise. Never calls the model."""
+    return _drafts.get(f"{email['id']}:send_reply") or template_reply(email, label)
 
 
 def _pending_action(email_id: str, kind: str) -> ProposedAction:
@@ -179,7 +191,7 @@ def _pending_action(email_id: str, kind: str) -> ProposedAction:
 
 @app.get("/", include_in_schema=False)
 def page() -> FileResponse:
-    return FileResponse(PAGE)
+    return FileResponse(PAGE, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/config", tags=["lab"])
@@ -190,6 +202,7 @@ def config() -> dict:
         "threshold": THRESHOLD,
         "injection_threshold": INJECTION_THRESHOLD,
         "model": _model_state["status"],
+        "draft_model": DRAFT_MODEL,
     }
 
 
@@ -239,6 +252,20 @@ def approve(email_id: str, kind: str, edit: Edit | None = None) -> dict:
     ledger.add(action.key)
     _receipts[action.key] = receipt
     return _action_json(action)
+
+
+@app.post("/api/emails/{email_id}/actions/send_reply/draft", tags=["approval"])
+def draft(email_id: str) -> dict:
+    """Have the drafting model write the reply. Slow on a CPU; the result is kept."""
+    action = _pending_action(email_id, "send_reply")
+    with _draft_lock:
+        if action.key not in _drafts:
+            email = _inbox_email(email_id)
+            try:
+                _drafts[action.key] = llm_reply(email, _proposed(email)[0].outcome)
+            except DraftError as error:
+                raise HTTPException(502, str(error)) from error
+    return _action_json(_pending_action(email_id, "send_reply"))
 
 
 @app.post("/api/emails/{email_id}/actions/{kind}/reject", tags=["approval"])
