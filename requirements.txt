@@ -1,17 +1,4 @@
-fastapi>=0.110
-uvicorn>=0.29
-httpx>=0.27
-pytest>=8.0
-python-dotenv>=1.0
+-r requirements-base.txt
 
-# Orchestration with a pause for the approval (D13); the CLI serves the graph to LangGraph Studio.
-langgraph>=1.0
-langsmith>=0.4      # traces and evaluation runs; inactive without a key
-langgraph-cli[inmem]>=0.4
-
-# Decision model, runs locally on CPU (DECISIONS.md, D1).
+# Decision model, runs locally on CPU (DECISIONS.md, D1). Pulls in torch.
 opendecider>=0.5
-
-# LLM SDK — Anthropic is here as a convenience. You may swap in openai, or any
-# other provider's SDK; the task does not require a specific model vendor.
-anthropic>=0.40

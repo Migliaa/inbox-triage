@@ -261,3 +261,13 @@ variable. Tests force tracing off, whatever the local settings say.
 
 The human verdict is recorded as a run of its own rather than as feedback on the draft: it is
 a step of the process, and it is the record of who allowed a write.
+
+## D15 · Tests run on every push
+
+`.github/workflows/tests.yml` runs the test suite on GitHub Actions at each push and pull
+request. The tests replace both models with fixed answers and use the mock API in-process, so
+the workflow installs `requirements-base.txt` only: no decision model, no torch, no network
+beyond the package index. What it guards is the behaviour around the models (the approval gate,
+the token separation, the failure handling), which is the part a code change can break. Model
+quality is not checked in CI: that is what `evals.run` and the LangSmith experiments are for,
+and they need the model on a machine that can run it.
