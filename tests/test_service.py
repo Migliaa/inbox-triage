@@ -56,6 +56,9 @@ def api(monkeypatch):
 
     monkeypatch.setattr(service, "llm_reply", llm_reply)
     monkeypatch.setattr(service, "_drafts", {})
+    monkeypatch.setattr(service, "_human_labels", {})
+    monkeypatch.setattr(service, "_flagged", set())
+    monkeypatch.setattr(service, "_unconfirmed", set())
     client = TestClient(service.app)   # not used as a context manager: no model warm-up
     client.write_clients_built = built
     client.drafted = drafted
@@ -117,7 +120,7 @@ def test_inbox_unreachable_is_reported(api, monkeypatch):
 
 def test_probes_are_decided_but_never_proposed(api):
     probes = api.get("/api/probes").json()
-    assert len(probes) >= 5 and all(p["id"].startswith("p-") for p in probes)
+    assert len(probes) >= 12 and all(p["id"].startswith("p-") for p in probes)
     api.post("/api/decide", json={k: probes[0][k] for k in ("from", "subject", "body")})
     assert api.get(f"/api/emails/{probes[0]['id']}").status_code == 404
     assert api.write_clients_built == []
@@ -151,3 +154,55 @@ def test_when_the_drafting_model_is_down_the_template_stays(api, monkeypatch):
     assert api.post("/api/emails/e-001/actions/send_reply/draft").status_code == 502
     [action] = api.get("/api/emails/e-001").json()["actions"]
     assert action["draft"] == "template" and action["status"] == "pending"
+
+
+def test_an_uncertain_email_waits_for_a_person_who_can_label_it(api):
+    view = api.get("/api/emails/e-008").json()
+    assert view["handling"] == {"label": "uncertain", "by": "model", "reviewable": True} and view["actions"] == []
+    view = api.post("/api/emails/e-008/label", json={"label": "billing"}).json()
+    assert view["handling"]["by"] == "person" and [a["kind"] for a in view["actions"]] == ["send_reply"]
+    assert api.get("/api/audit").json() == EMPTY, "a label proposes, it does not execute"
+    assert api.post("/api/emails/e-008/label", json={"label": None}).json()["actions"] == []
+
+
+def test_a_person_cannot_relabel_what_the_model_labelled_or_invent_a_label(api):
+    assert api.post("/api/emails/e-001/label", json={"label": "spam"}).status_code == 409
+    assert api.post("/api/emails/e-008/label", json={"label": "wire_money"}).status_code == 422
+
+
+def test_a_flagged_email_relabelled_by_a_person_never_reaches_the_drafting_model(api):
+    view = api.post("/api/emails/e-007/label", json={"label": "billing"}).json()
+    assert view["actions"][0]["draft"] == "blocked"
+    assert api.post("/api/emails/e-007/actions/send_reply/draft").status_code == 409
+    assert api.drafted == []
+
+
+class FailingWriter:
+    def __init__(self, error):
+        self.error = error
+
+    def send_reply(self, **payload):
+        raise self.error
+
+
+def test_a_refused_write_leaves_the_action_pending(api, monkeypatch):
+    monkeypatch.setattr(service, "write_client", lambda: FailingWriter(service.httpx.ConnectError("refused")))
+    assert api.post("/api/emails/e-001/actions/send_reply/approve").status_code == 502
+    assert api.get("/api/emails/e-001").json()["actions"][0]["status"] == "pending"
+
+
+def test_a_write_that_times_out_is_not_offered_again(api, monkeypatch):
+    monkeypatch.setattr(service, "write_client", lambda: FailingWriter(service.httpx.ReadTimeout("no answer")))
+    assert api.post("/api/emails/e-001/actions/send_reply/approve").status_code == 504
+    assert api.get("/api/emails/e-001").json()["actions"][0]["status"] == "unconfirmed"
+    assert api.post("/api/emails/e-001/actions/send_reply/approve").status_code == 409
+
+
+def test_when_the_decision_model_fails_the_email_gets_no_action(api, monkeypatch):
+    def broken(email):
+        raise RuntimeError("out of memory")
+
+    monkeypatch.setattr(service, "ask_model", broken)
+    assert api.get("/api/emails/e-001").status_code == 503
+    assert api.post("/api/emails/e-001/actions/send_reply/approve").status_code == 503
+    assert api.get("/api/audit").json() == EMPTY

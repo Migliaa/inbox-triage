@@ -77,7 +77,8 @@ class TriageClient:
         self.base_url = base_url.rstrip("/")
         self._read_token = read_token
         self._write_token = write_token
-        self._http = httpx.Client(timeout=10)
+        # Retries cover connections that could not be opened: nothing was sent, so they are safe for writes too.
+        self._http = httpx.Client(timeout=10, transport=httpx.HTTPTransport(retries=2))
 
     @property
     def can_write(self) -> bool:

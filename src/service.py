@@ -29,11 +29,14 @@ import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
+from langsmith import traceable, tracing_context
 from pydantic import BaseModel, ConfigDict, Field
 
 load_dotenv()  # before importing the decider, which reads its settings at import time
 
-from src.decider import INJECTION_THRESHOLD, LABELS, THRESHOLD, Decision, ask_model, route  # noqa: E402
+from src.decider import (  # noqa: E402
+    INJECTION, INJECTION_THRESHOLD, LABELS, THRESHOLD, UNCERTAIN, Decision, ask_model, route,
+)
 from src.drafter import MODEL as DRAFT_MODEL, DraftError, llm_reply  # noqa: E402
 from src.triage_skill import (  # noqa: E402
     ROUTING, Ledger, ProposedAction, TriageClient, execute, plan_actions, template_reply,
@@ -55,6 +58,15 @@ _receipts: dict[str, dict] = {}
 _drafts: dict[str, str] = {}
 _draft_lock = threading.Lock()
 
+# Outcomes that plan nothing. They are not discarded: a person sees them and can give
+# the email a label, which then plans actions like any other (DECISIONS.md, D12).
+REVIEWABLE = (UNCERTAIN, INJECTION, "spam")
+_human_labels: dict[str, str] = {}
+# Emails the model flagged as injections: the drafting model never reads them.
+_flagged: set[str] = set()
+# Writes that timed out: they may or may not have reached the client system.
+_unconfirmed: set[str] = set()
+
 _model_lock = threading.Lock()
 _answers: dict[tuple[str, str, str], tuple[dict[str, float], float]] = {}
 _model_state = {"status": "loading"}
@@ -75,13 +87,23 @@ def answers_for(email: dict) -> tuple[dict[str, float], float]:
     key = (email.get("from", ""), email.get("subject", ""), email.get("body", ""))
     with _model_lock:
         if key not in _answers:
-            _answers[key] = ask_model(email)
+            try:
+                with _trace_thread(email.get("id", "free-text")):
+                    _answers[key] = ask_model(email)
+            except Exception as error:  # no outcome means no action: the email waits
+                raise HTTPException(503, f"the decision model failed: {error}") from error
     return _answers[key]
+
+
+def _trace_thread(email_id: str):
+    """Groups the runs about one email (decision, draft, verdicts) in the trace store."""
+    return tracing_context(metadata={"thread_id": email_id})
 
 
 def _warm_up() -> None:
     try:
-        answers_for({"subject": "warm-up", "body": "warm-up"})
+        with tracing_context(enabled=False):
+            answers_for({"subject": "warm-up", "body": "warm-up"})
         _model_state["status"] = "ready"
     except Exception as error:  # shown on the page instead of a silent hang
         _model_state["status"] = f"error: {error}"
@@ -137,6 +159,8 @@ def _decision_json(decision: Decision) -> dict:
 def _status(key: str) -> str:
     if key in ledger:
         return "executed"
+    if key in _unconfirmed:
+        return "unconfirmed"
     return "rejected" if key in _rejected else "pending"
 
 
@@ -147,10 +171,18 @@ def _action_json(action: ProposedAction) -> dict:
         "payload": action.payload,
         "rationale": action.rationale,
         "text_field": TEXT_FIELD[action.kind],
-        "draft": ("model" if action.key in _drafts else "template") if action.kind == "send_reply" else None,
+        "draft": _draft_state(action),
         "status": _status(action.key),
         "receipt": _receipts.get(action.key),
     }
+
+
+def _draft_state(action: ProposedAction) -> str | None:
+    if action.kind != "send_reply":
+        return None
+    if action.payload.get("in_reply_to") in _flagged:
+        return "blocked"
+    return "model" if action.key in _drafts else "template"
 
 
 def _inbox() -> list[dict]:
@@ -167,11 +199,26 @@ def _inbox_email(email_id: str) -> dict:
     raise HTTPException(404, f"no email {email_id!r} in the inbox")
 
 
-def _proposed(email: dict) -> tuple[Decision, list[ProposedAction]]:
-    """Decision at the configured threshold, and the actions it implies."""
+@traceable(name="human_verdict")
+def _record_verdict(email_id: str, kind: str, verdict: str, edited: bool = False, receipt: dict | None = None) -> dict:
+    """What a person decided about one action: kept as a run of its own in the trace store."""
+    return {"email_id": email_id, "kind": kind, "verdict": verdict, "edited": edited, "receipt": receipt}
+
+
+def _proposed(email: dict) -> tuple[Decision, str, list[ProposedAction]]:
+    """The model's decision, the label in force, and the actions that label implies.
+
+    The label in force is the model's outcome, unless that outcome plans nothing and a
+    person gave the email a label.
+    """
     decision = route(*answers_for(email))
-    actions = plan_actions(decision.outcome, email, _draft_or_template) if decision.outcome in LABELS else []
-    return decision, actions
+    if decision.outcome == INJECTION:
+        _flagged.add(email["id"])
+    label = decision.outcome
+    if label in REVIEWABLE:
+        label = _human_labels.get(email["id"], label)
+    actions = plan_actions(label, email, _draft_or_template) if label in LABELS else []
+    return decision, label, actions
 
 
 def _draft_or_template(email: dict, label: str) -> str:
@@ -180,7 +227,7 @@ def _draft_or_template(email: dict, label: str) -> str:
 
 
 def _pending_action(email_id: str, kind: str) -> ProposedAction:
-    _, actions = _proposed(_inbox_email(email_id))
+    _, _, actions = _proposed(_inbox_email(email_id))
     action = next((a for a in actions if a.kind == kind), None)
     if action is None:
         raise HTTPException(404, f"{kind!r} was not proposed for {email_id}")
@@ -235,8 +282,36 @@ def inbox() -> list[dict]:
 def email_view(email_id: str) -> dict:
     """An inbox email with its decision and the actions waiting for a verdict."""
     email = _inbox_email(email_id)
-    decision, actions = _proposed(email)
-    return {"email": email, "decision": _decision_json(decision), "actions": [_action_json(a) for a in actions]}
+    decision, label, actions = _proposed(email)
+    reviewable = decision.outcome in REVIEWABLE
+    handling = {"label": label, "by": "person" if reviewable and label != decision.outcome else "model", "reviewable": reviewable}
+    return {
+        "email": email,
+        "decision": _decision_json(decision),
+        "handling": handling,
+        "actions": [_action_json(a) for a in actions],
+    }
+
+
+class LabelIn(BaseModel):
+    label: str | None = Field(None, description="One of the four labels, or null to take the person's label back.")
+
+
+@app.post("/api/emails/{email_id}/label", tags=["approval"])
+def set_label(email_id: str, body: LabelIn) -> dict:
+    """A person labels an email the model left without actions. Every action still needs approval."""
+    email = _inbox_email(email_id)
+    if route(*answers_for(email)).outcome not in REVIEWABLE:
+        raise HTTPException(409, "the model labelled this email: reject its actions instead")
+    if body.label is None:
+        _human_labels.pop(email_id, None)
+    elif body.label in LABELS:
+        _human_labels[email_id] = body.label
+        with _trace_thread(email_id):
+            _record_verdict(email_id, "label", body.label)
+    else:
+        raise HTTPException(422, f"label must be one of {', '.join(LABELS)}")
+    return email_view(email_id)
 
 
 @app.post("/api/emails/{email_id}/actions/{kind}/approve", tags=["approval"])
@@ -247,10 +322,18 @@ def approve(email_id: str, kind: str, edit: Edit | None = None) -> dict:
         action = replace(action, payload={**action.payload, TEXT_FIELD[kind]: edit.text})
     try:
         receipt = execute(action, write_client(), approved=True)
+    except httpx.TimeoutException as error:
+        # The request left and no answer came back: retrying could send it twice.
+        _unconfirmed.add(action.key)
+        detail = "the client system did not confirm the write: it may have happened. Check there before doing it again."
+        raise HTTPException(504, detail) from error
     except httpx.HTTPError as error:
-        raise HTTPException(502, f"the mock API refused the write: {error}") from error
+        # Refused or unreachable: nothing was written, the action stays pending.
+        raise HTTPException(502, f"the client system refused the write: {error}") from error
     ledger.add(action.key)
     _receipts[action.key] = receipt
+    with _trace_thread(email_id):
+        _record_verdict(email_id, kind, "approved", edited=edit is not None and edit.text is not None, receipt=receipt)
     return _action_json(action)
 
 
@@ -261,8 +344,12 @@ def draft(email_id: str) -> dict:
     with _draft_lock:
         if action.key not in _drafts:
             email = _inbox_email(email_id)
+            decision, label, _ = _proposed(email)
+            if decision.outcome == INJECTION:
+                raise HTTPException(409, "flagged as a possible injection: the drafting model does not read this email")
             try:
-                _drafts[action.key] = llm_reply(email, _proposed(email)[0].outcome)
+                with _trace_thread(email_id):
+                    _drafts[action.key] = llm_reply(email, label)
             except DraftError as error:
                 raise HTTPException(502, str(error)) from error
     return _action_json(_pending_action(email_id, "send_reply"))
@@ -273,6 +360,8 @@ def reject(email_id: str, kind: str) -> dict:
     """Drop one proposed action. Nothing is written."""
     action = _pending_action(email_id, kind)
     _rejected.add(action.key)
+    with _trace_thread(email_id):
+        _record_verdict(email_id, kind, "rejected")
     return _action_json(action)
 
 

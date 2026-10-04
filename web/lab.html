@@ -31,13 +31,22 @@
   .wide { grid-column: 1 / -1; }
   .stack { display: grid; gap: 16px; align-content: start; }
 
-  .pickers { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+  .pickers { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; }
+  @media (max-width: 1100px) { .pickers { grid-template-columns: 1fr; } }
   .emails { list-style: none; margin: 0; padding: 0; }
   .emails { font-size: 14px; }
   .emails li { display: flex; gap: 10px; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
   .emails li:hover { background: var(--track); }
   .emails li.selected { background: var(--track); box-shadow: inset 3px 0 0 var(--bar); }
   .emails .id { font-family: var(--mono); font-size: 13px; color: var(--muted); flex: none; }
+  .emails li { min-width: 0; }
+  .emails .subject { flex: 1 1 0; min-width: 0; }
+  .badge { flex: none; font: 11px var(--mono); padding: 1px 6px; border-radius: 10px; border: 1px solid var(--line); color: var(--muted); }
+  .badge.review { color: var(--warn); border-color: var(--warn); }
+  .badge.person { color: var(--accent); border-color: var(--accent); }
+  .review-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+  .review-row button { padding: 4px 10px; font-size: 13px; }
+  .status.unconfirmed { color: var(--warn); }
   .emails .subject { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
@@ -192,11 +201,32 @@ async function loadInbox() {
     const emails = await api("/api/inbox");
     $("inbox-error").textContent = "";
     $("inbox").replaceChildren(...emails.map((email) => row(email, false)));
+    loadBadges(emails);
     return emails;
   } catch (error) {
     $("inbox-error").textContent = error.message;
     return [];
   }
+}
+
+// One decision per inbox email, so the list shows at a glance which ones wait for a person.
+async function loadBadges(emails) {
+  for (const email of emails) {
+    try { setBadge(await api(`/api/emails/${email.id}`)); } catch (error) { return; }
+  }
+}
+
+function setBadge(view) {
+  const item = document.querySelector(`#inbox li[data-id="${view.email.id}"]`);
+  if (!item) return;
+  item.querySelector(".badge")?.remove();
+  const handling = view.handling, byPerson = handling.by === "person";
+  const waiting = handling.reviewable && !byPerson && handling.label !== "spam";
+  item.append(el("span", {
+    className: "badge" + (byPerson ? " person" : waiting ? " review" : ""),
+    textContent: waiting ? "to review" : handling.label,
+    title: byPerson ? "label given by a person" : waiting ? "the model said: " + handling.label : "label given by the model",
+  }));
 }
 
 async function loadProbes() {
@@ -236,7 +266,8 @@ async function decide() {
   try {
     if (state.emailId) {
       const view = await api(`/api/emails/${state.emailId}`);
-      state.decision = view.decision; state.actions = view.actions;
+      state.decision = view.decision; state.actions = view.actions; state.handling = view.handling;
+      setBadge(view);
     } else {
       state.decision = await api("/api/decide", { from: $("from").value || undefined, subject: $("subject").value, body: $("body").value });
       state.actions = [];
@@ -295,6 +326,8 @@ function render() {
     el("div", { className: "note", textContent: acting ? "Plans: " + shown.would_plan.join(", ") : "Plans no action." }),
   );
 
+  if (state.emailId && atConfigured && state.handling.reviewable) outcome.append(reviewRow());
+
   const actions = $("actions");
   if (!state.emailId) {
     actions.replaceChildren(el("span", { className: "note", textContent: "Free text is only decided. Actions are proposed for inbox emails." }));
@@ -307,6 +340,27 @@ function render() {
     actions.replaceChildren(...state.actions.map(actionCard));
     state.actions.forEach(requestDraft);
   }
+}
+
+// For an email the model left without actions, a person can pick the label.
+function reviewRow() {
+  const handling = state.handling, emailId = state.emailId;
+  async function label(value) {
+    const view = await api(`/api/emails/${emailId}/label`, { label: value });
+    if (state.emailId !== emailId) return;
+    state.actions = view.actions; state.handling = view.handling;
+    setBadge(view);
+    render();
+  }
+  if (handling.by === "person") {
+    return el("div", { className: "review-row" },
+      el("span", { className: "note", textContent: `A person handles it as ${handling.label}.` }),
+      el("button", { textContent: "Undo", onclick: () => label(null) }));
+  }
+  return el("div", { className: "review-row" },
+    el("span", { className: "note", textContent: "A person can handle it as:" }),
+    ...state.config.labels.filter((name) => name !== handling.label)
+      .map((name) => el("button", { textContent: name, onclick: () => label(name) })));
 }
 
 // The reply starts as a fixed template; the drafting model replaces it, once per email.
@@ -339,6 +393,7 @@ function actionCard(action) {
   const origin = !action.draft || action.status !== "pending" ? ""
     : drafting ? `Placeholder text. ${state.config.draft_model} is writing the draft, about a minute on a CPU…`
     : action.draft === "model" ? `Draft written by ${state.config.draft_model}.`
+    : action.draft === "blocked" ? "Fixed text: the email was flagged as a possible injection, so the drafting model does not read it."
     : `Placeholder text: ${state.draftError[action.key] || "no draft yet"}.`;
 
   async function verdict(kind) {

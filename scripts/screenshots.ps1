@@ -12,6 +12,7 @@ $shots = [ordered]@{
     "lab-e003-actions"        = "http://127.0.0.1:8000/?email=e-003"
     "lab-p01-hidden-injection" = "http://127.0.0.1:8000/?probe=p-01"
     "lab-p02-quoted-attack"   = "http://127.0.0.1:8000/?probe=p-02"
+    "lab-p12-missed-injection" = "http://127.0.0.1:8000/?probe=p-12"
     "api-docs"                = "http://127.0.0.1:8000/docs"
 }
 
