@@ -16,6 +16,11 @@ which provides the mock client API (`mock_api/`) and the eight emails (`fixtures
   (LM Studio by default). Without one the service falls back to a fixed template.
 - `src/service.py`, `web/lab.html`: a page to try the decider on any text and to approve, reject
   or edit the proposed actions.
+- `src/graph.py`: the same flow as a LangGraph graph that pauses at the approval and resumes
+  from a saved state. `langgraph dev` opens it in LangGraph Studio (input `{"email_id": "e-003"}`).
+- Tracing and evaluation with LangSmith, optional: graph runs, the service's decisions, drafts
+  and human verdicts, and `python -m evals.langsmith_eval` to run the decider on the emails as
+  an experiment. Without a key nothing is sent.
 - `DECISIONS.md`: what was decided and why, with the results on the eight emails and on eight
   probe emails. Both are single runs on a handful of emails: they show the mechanism, they do not
   measure accuracy.
@@ -42,4 +47,4 @@ Then open http://127.0.0.1:8000 (the API reference is at `/docs`).
 
 ## Still to come
 
-Failure handling, orchestration with LangGraph, Docker, CI, tracing.
+Docker, CI, a public deployment.

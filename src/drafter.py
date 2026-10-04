@@ -14,6 +14,7 @@ from __future__ import annotations
 import os
 
 import httpx
+from langsmith import traceable
 
 BASE_URL = os.environ.get("LLM_BASE_URL", "http://127.0.0.1:1234/v1").rstrip("/")
 MODEL = os.environ.get("LLM_MODEL", "google/gemma-4-12b-qat")
@@ -52,6 +53,7 @@ def build_messages(email: dict, label: str) -> list[dict]:
     return [{"role": "system", "content": SYSTEM}, {"role": "user", "content": content}]
 
 
+@traceable(name="draft_reply", run_type="llm", metadata={"model": MODEL})
 def llm_reply(email: dict, label: str) -> str:
     """A reply draft written by the model. Raises DraftError if there is none."""
     request = {

@@ -11,12 +11,15 @@ import os
 from dataclasses import dataclass
 from functools import lru_cache
 
+from langsmith import traceable
+
 LABELS = ("billing", "bug_report", "sales_lead", "spam")
 
 # Outcomes that are not a label: the email goes to a human, or is dropped as an attack.
 UNCERTAIN = "uncertain"
 INJECTION = "injection"
 
+# Tracing (LangSmith) is off unless LANGSMITH_TRACING and a key are set: the decorators then do nothing.
 MODEL_NAME = os.environ.get("DECIDER_MODEL", "manjunathshiva/opendecider-nano")
 MODEL_REVISION = os.environ.get("DECIDER_REVISION") or None
 
@@ -67,6 +70,7 @@ def _model():
     return load(MODEL_NAME, revision=MODEL_REVISION)
 
 
+@traceable(name="decider", run_type="llm", metadata={"model": MODEL_NAME})
 def ask_model(email: dict) -> tuple[dict[str, float], float]:
     """Raw model answers: label probabilities and the probability of an injection."""
     result = _model().system_one(
