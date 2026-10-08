@@ -11,8 +11,8 @@ CLAUDE.md
 ledger.json
 MATERIALE.md
 
-# template from the original exercise, rewritten at the end
-ENGINEERING_LOG.md
+# report for the portfolio site, in Italian (local)
+report/
 
 # LangGraph dev server state
 .langgraph_api/

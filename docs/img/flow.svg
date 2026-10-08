@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 440" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+<defs><marker id="tip" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#16263d"/></marker></defs>
+<rect width="1200" height="440" fill="#ffffff"/>
+<rect x="20" y="105" width="130" height="60" rx="8" fill="#ffffff" stroke="#16263d" stroke-width="1.5"/>
+<text x="85.0" y="140.0" text-anchor="middle" font-size="14" font-weight="600" fill="#16263d">Incoming email</text>
+<rect x="190" y="85" width="220" height="100" rx="8" fill="#eef3fb" stroke="#16263d" stroke-width="1.5"/>
+<text x="300.0" y="113.0" text-anchor="middle" font-size="14" font-weight="600" fill="#16263d">Decision model</text>
+<text x="300.0" y="131.0" text-anchor="middle" font-size="12" font-weight="400" fill="#51607a">OpenDecider-nano, on CPU</text>
+<text x="300.0" y="149.0" text-anchor="middle" font-size="12" font-weight="400" fill="#51607a">a probability for each of</text>
+<text x="300.0" y="167.0" text-anchor="middle" font-size="12" font-weight="400" fill="#51607a">4 labels + “is it an injection?”</text>
+<rect x="480" y="40" width="150" height="70" rx="8" fill="#ffffff" stroke="#16263d" stroke-width="1.5"/>
+<text x="555.0" y="71.0" text-anchor="middle" font-size="14" font-weight="600" fill="#16263d">Proposed actions</text>
+<text x="555.0" y="89.0" text-anchor="middle" font-size="12" font-weight="400" fill="#51607a">from a fixed routing table</text>
+<rect x="655" y="40" width="165" height="70" rx="8" fill="#ffffff" stroke="#16263d" stroke-width="1.5"/>
+<text x="737.5" y="62.0" text-anchor="middle" font-size="14" font-weight="600" fill="#16263d">Reply draft</text>
+<text x="737.5" y="80.0" text-anchor="middle" font-size="12" font-weight="400" fill="#51607a">generative model,</text>
+<text x="737.5" y="98.0" text-anchor="middle" font-size="12" font-weight="400" fill="#51607a">no tools, no token</text>
+<rect x="845" y="40" width="165" height="70" rx="8" fill="#eef3fb" stroke="#1d4ed8" stroke-width="1.5"/>
+<text x="927.5" y="62.0" text-anchor="middle" font-size="14" font-weight="600" fill="#16263d">A person</text>
+<text x="927.5" y="80.0" text-anchor="middle" font-size="12" font-weight="400" fill="#51607a">approves, edits or rejects</text>
+<text x="927.5" y="98.0" text-anchor="middle" font-size="12" font-weight="400" fill="#51607a">each action</text>
+<rect x="1035" y="40" width="150" height="70" rx="8" fill="#ffffff" stroke="#16263d" stroke-width="1.5"/>
+<text x="1110.0" y="71.0" text-anchor="middle" font-size="14" font-weight="600" fill="#16263d">Client systems</text>
+<text x="1110.0" y="89.0" text-anchor="middle" font-size="12" font-weight="400" fill="#51607a">mail · CRM · Slack</text>
+<rect x="480" y="190" width="190" height="60" rx="8" fill="#f5f6f8" stroke="#9aa7bb" stroke-width="1.5"/>
+<text x="575.0" y="216.0" text-anchor="middle" font-size="14" font-weight="600" fill="#16263d">Held: nothing planned</text>
+<text x="575.0" y="234.0" text-anchor="middle" font-size="12" font-weight="400" fill="#51607a">stays in the list, to review</text>
+<path d="M150,135 L188,135" fill="none" stroke="#16263d" stroke-width="1.5" marker-end="url(#tip)"/>
+<path d="M410,115 L445,115 L445,75 L478,75" fill="none" stroke="#16263d" stroke-width="1.5" marker-end="url(#tip)"/>
+<path d="M410,155 L445,155 L445,220 L478,220" fill="none" stroke="#16263d" stroke-width="1.5" marker-end="url(#tip)"/>
+<path d="M630,75 L653,75" fill="none" stroke="#16263d" stroke-width="1.5" marker-end="url(#tip)"/>
+<path d="M820,75 L843,75" fill="none" stroke="#16263d" stroke-width="1.5" marker-end="url(#tip)"/>
+<path d="M1010,75 L1033,75" fill="none" stroke="#16263d" stroke-width="1.5" marker-end="url(#tip)"/>
+<path d="M555,190 L555,112" fill="none" stroke="#16263d" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#tip)"/>
+<text x="438" y="70" font-size="12" fill="#51607a" text-anchor="end">top label ≥ 0.90</text>
+<text x="438" y="208" font-size="12" fill="#51607a" text-anchor="end">uncertain · injection · spam</text>
+<text x="565" y="155" font-size="12" fill="#51607a">a person can give the label</text>
+<rect x="20" y="300" width="800" height="30" rx="6" fill="#f5f6f8" stroke="#9aa7bb"/><text x="420.0" y="320" text-anchor="middle" font-size="12.5" fill="#16263d">read token only</text>
+<rect x="845" y="300" width="340" height="30" rx="6" fill="#fff4dc" stroke="#9aa7bb"/><text x="1015.0" y="320" text-anchor="middle" font-size="12.5" fill="#16263d">write token, only after an approval</text>
+<rect x="20" y="345" width="1165" height="30" rx="6" fill="#eef3fb" stroke="#9aa7bb"/><text x="602.5" y="365" text-anchor="middle" font-size="12.5" fill="#16263d">LangSmith: one trace per email — decision, draft, human verdict</text>
+<rect x="20" y="390" width="1165" height="30" rx="6" fill="#ffffff" stroke="#9aa7bb"/><text x="602.5" y="410" text-anchor="middle" font-size="12.5" fill="#16263d">GitHub Actions: the tests on the gate, the tokens and the failures run on every push</text>
+</svg>

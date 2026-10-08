@@ -297,21 +297,29 @@ would cost minutes to check a file that rarely changes.
 
 ## D17 · A public demo that replays recorded answers
 
-The repository opens in GitHub Codespaces (`.devcontainer/devcontainer.json`): the mock API and
-the lab start by themselves and the page opens in the browser, with no installation.
+The public demo is a static page: https://migliaa.github.io/inbox-triage/. Nothing runs behind
+it, so it costs nothing, opens at once and needs no account.
 
-The model is not loaded there. `python -m evals.record` runs the real model once on the eight
-inbox emails and the twelve probes and saves its probabilities in `evals/recorded_answers.json`;
-with `DECIDER_ANSWERS` pointing at that file the service replays them. Everything after the
-model's answer is the real code: the thresholds and the slider, the routing, the approval gate,
-the writes to the mock API, the ledger.
+It is built from the running system, not written by hand. `python -m evals.record` runs the
+model once on the eight inbox emails and the twelve probes and saves its probabilities;
+`python scripts/build_demo.py` then starts the service on those answers, asks it everything
+the page can ask (each email, each probe, every position of the threshold slider, each label a
+person can give, the reply drafts from the drafting model) and embeds the responses in a copy
+of the lab page.
 
-- **What it costs.** A text that was not recorded cannot be decided, and the page says so
-  instead of answering something. The header shows that the model is not loaded. Trying a new
-  email needs the model: `docker compose up` or the local setup.
-- **Why.** With the model the service needs about 1.9 GB of memory and a 790 MB download at
-  every start; replaying, about 170 MB and a few seconds. Free hosting with enough memory for
-  the model was not available without a paid plan or a payment card.
-- **Staleness.** The file is a snapshot. It has to be recorded again when the model, the two
-  questions or the emails change, otherwise the demo shows answers the code no longer gives.
-- Reply drafts in the demo are the fixed template: there is no generative model there (D11).
+- **What is recorded and what is simulated.** Decisions, outcomes at each threshold, proposed
+  actions and drafts are the service's own responses. Approving and rejecting are simulated in
+  the page: the write to the mock API is imitated in the browser and is gone on reload. The
+  approval gate, the ledger and the token separation are therefore not exercised by the demo;
+  the tests and the local setup do that.
+- **What it cannot do.** A new or edited text cannot be decided, and the page says so instead
+  of answering something. That needs the model: `docker compose up` or the local setup.
+- **Why not the real service online.** With the model it needs about 1.9 GB of memory; free
+  hosting of that size was not available without a paid plan or a payment card.
+- **Staleness.** The page is a snapshot: it has to be built again when the model, the
+  questions, the emails, the routing or the page change. It is committed in `site/` and
+  published by a workflow, so what is online is what is in the repository.
+
+The same recorded answers also run the real service without the model (`DECIDER_ANSWERS`,
+about 170 MB instead of 1.9 GB): `.devcontainer/` uses that to open the repository in GitHub
+Codespaces, where the gate and the mock API are the real code.
