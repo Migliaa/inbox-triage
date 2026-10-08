@@ -30,6 +30,15 @@ which provides the mock client API (`mock_api/`) and the eight emails (`fixtures
 
 ![The lab on an email the model is not sure about](docs/img/lab-e008-uncertain.png)
 
+## Try it without installing anything
+
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/Migliaa/inbox-triage)
+
+Needs a GitHub account. The lab opens in the browser after about a minute. This demo does not
+load the decision model: it replays the answers recorded from it for the eight inbox emails and
+the twelve probes (D17 in `DECISIONS.md`), so a new or edited text cannot be decided there.
+Thresholds, routing, approval and the writes to the mock API are the real code.
+
 ## Run it
 
 With Docker (see D16 in `DECISIONS.md`):
@@ -61,6 +70,3 @@ Then open http://127.0.0.1:8000 (the API reference is at `/docs`).
 .venv/Scripts/python -m evals.run        # the eight emails against the expected outcomes
 ```
 
-## Still to come
-
-A public deployment.

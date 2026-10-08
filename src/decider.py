@@ -7,9 +7,12 @@ can only be one of the declared options (see DECISIONS.md, D1-D4).
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 from dataclasses import dataclass
 from functools import lru_cache
+from pathlib import Path
 
 from langsmith import traceable
 
@@ -22,6 +25,9 @@ INJECTION = "injection"
 # Tracing (LangSmith) is off unless LANGSMITH_TRACING and a key are set: the decorators then do nothing.
 MODEL_NAME = os.environ.get("DECIDER_MODEL", "manjunathshiva/opendecider-nano")
 MODEL_REVISION = os.environ.get("DECIDER_REVISION") or None
+# A file of answers recorded from the model (evals/record.py). When set, the model is not
+# loaded and only the recorded emails can be decided: for demos on machines too small for it.
+RECORDED_ANSWERS = os.environ.get("DECIDER_ANSWERS") or None
 
 # D2: below this probability the top label is not trusted.
 THRESHOLD = float(os.environ.get("DECIDER_THRESHOLD", "0.9"))
@@ -70,9 +76,32 @@ def _model():
     return load(MODEL_NAME, revision=MODEL_REVISION)
 
 
+class NotRecorded(LookupError):
+    """Recorded mode, and this text is not among the recorded ones."""
+
+
+def email_key(email: dict) -> str:
+    """Identifies an email by what the model reads of it."""
+    parts = [email.get("from") or "", email.get("subject") or "", email.get("body") or ""]
+    return hashlib.sha256(json.dumps([part.strip() for part in parts]).encode("utf-8")).hexdigest()
+
+
+@lru_cache(maxsize=1)
+def _recorded() -> dict:
+    return json.loads(Path(RECORDED_ANSWERS).read_text(encoding="utf-8"))["answers"]
+
+
 @traceable(name="decider", run_type="llm", metadata={"model": MODEL_NAME})
 def ask_model(email: dict) -> tuple[dict[str, float], float]:
     """Raw model answers: label probabilities and the probability of an injection."""
+    if RECORDED_ANSWERS:
+        answer = _recorded().get(email_key(email))
+        if answer is None:
+            raise NotRecorded(
+                "this deployment replays answers recorded from the model for the inbox and the probe "
+                "emails, and this text is not one of them; a new or edited text needs the model"
+            )
+        return {label: float(answer["probabilities"][label]) for label in LABELS}, float(answer["injection"])
     result = _model().system_one(
         state={"from": email.get("from", ""), "subject": email.get("subject", ""), "body": email.get("body", "")},
         questions={"label": LABEL_QUESTION, "injection": INJECTION_QUESTION},

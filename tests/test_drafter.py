@@ -29,3 +29,13 @@ def test_an_empty_answer_raises_a_draft_error(monkeypatch):
     monkeypatch.setattr(drafter.httpx, "post", lambda *args, **kwargs: answer)
     with pytest.raises(drafter.DraftError):
         drafter.llm_reply(EMAIL, "billing")
+
+
+def test_without_a_configured_model_no_request_is_made(monkeypatch):
+    def fail(*args, **kwargs):
+        raise AssertionError("no request expected")
+
+    monkeypatch.setattr(drafter, "BASE_URL", "")
+    monkeypatch.setattr(drafter.httpx, "post", fail)
+    with pytest.raises(drafter.DraftError, match="no drafting model"):
+        drafter.llm_reply({"from": "a@b.c", "subject": "s", "body": "b"}, "billing")

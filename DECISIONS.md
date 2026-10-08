@@ -294,3 +294,24 @@ system runs the same on a machine that has Docker and nothing else.
 
 CI does not build the images: the tests do not need them, and a build with torch on every push
 would cost minutes to check a file that rarely changes.
+
+## D17 · A public demo that replays recorded answers
+
+The repository opens in GitHub Codespaces (`.devcontainer/devcontainer.json`): the mock API and
+the lab start by themselves and the page opens in the browser, with no installation.
+
+The model is not loaded there. `python -m evals.record` runs the real model once on the eight
+inbox emails and the twelve probes and saves its probabilities in `evals/recorded_answers.json`;
+with `DECIDER_ANSWERS` pointing at that file the service replays them. Everything after the
+model's answer is the real code: the thresholds and the slider, the routing, the approval gate,
+the writes to the mock API, the ledger.
+
+- **What it costs.** A text that was not recorded cannot be decided, and the page says so
+  instead of answering something. The header shows that the model is not loaded. Trying a new
+  email needs the model: `docker compose up` or the local setup.
+- **Why.** With the model the service needs about 1.9 GB of memory and a 790 MB download at
+  every start; replaying, about 170 MB and a few seconds. Free hosting with enough memory for
+  the model was not available without a paid plan or a payment card.
+- **Staleness.** The file is a snapshot. It has to be recorded again when the model, the two
+  questions or the emails change, otherwise the demo shows answers the code no longer gives.
+- Reply drafts in the demo are the fixed template: there is no generative model there (D11).

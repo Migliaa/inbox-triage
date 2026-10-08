@@ -1,0 +1,18 @@
+{
+  // Opens the lab in GitHub Codespaces. The decision model is not installed here: the service
+  // replays the answers recorded from it (evals/recorded_answers.json), so it starts in seconds.
+  "name": "inbox-triage",
+  "image": "mcr.microsoft.com/devcontainers/python:3.12",
+  "containerEnv": {
+    "DECIDER_ANSWERS": "evals/recorded_answers.json",
+    "LLM_BASE_URL": "",
+    "LEDGER_PATH": "/tmp/ledger.json"
+  },
+  "postCreateCommand": "pip install -r requirements-base.txt",
+  "postStartCommand": "rm -f /tmp/ledger.json; nohup python -m uvicorn mock_api.server:app --port 8099 > /tmp/mock-api.log 2>&1 & nohup python -m uvicorn src.service:app --port 8000 > /tmp/lab.log 2>&1 &",
+  "forwardPorts": [8000],
+  "portsAttributes": {
+    "8000": { "label": "Decision Lab", "onAutoForward": "openPreview" },
+    "8099": { "label": "mock API", "onAutoForward": "silent" }
+  }
+}

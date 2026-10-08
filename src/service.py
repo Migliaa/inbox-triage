@@ -35,7 +35,8 @@ from pydantic import BaseModel, ConfigDict, Field
 load_dotenv()  # before importing the decider, which reads its settings at import time
 
 from src.decider import (  # noqa: E402
-    INJECTION, INJECTION_THRESHOLD, LABELS, THRESHOLD, UNCERTAIN, Decision, ask_model, route,
+    INJECTION, INJECTION_THRESHOLD, LABELS, RECORDED_ANSWERS, THRESHOLD, UNCERTAIN, Decision, NotRecorded,
+    ask_model, route,
 )
 from src.drafter import MODEL as DRAFT_MODEL, DraftError, llm_reply  # noqa: E402
 from src.triage_skill import (  # noqa: E402
@@ -90,6 +91,8 @@ def answers_for(email: dict) -> tuple[dict[str, float], float]:
             try:
                 with _trace_thread(email.get("id", "free-text")):
                     _answers[key] = ask_model(email)
+            except NotRecorded as error:
+                raise HTTPException(422, str(error)) from error
             except Exception as error:  # no outcome means no action: the email waits
                 raise HTTPException(503, f"the decision model failed: {error}") from error
     return _answers[key]
@@ -101,6 +104,9 @@ def _trace_thread(email_id: str):
 
 
 def _warm_up() -> None:
+    if RECORDED_ANSWERS:
+        _model_state["status"] = "not loaded, replaying recorded answers"
+        return
     try:
         with tracing_context(enabled=False):
             answers_for({"subject": "warm-up", "body": "warm-up"})

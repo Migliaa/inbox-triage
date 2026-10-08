@@ -64,6 +64,8 @@ def llm_reply(email: dict, label: str) -> str:
         # Reasoning models would spend the whole budget thinking: a draft does not need it.
         "reasoning_effort": "none",
     }
+    if not BASE_URL:  # LLM_BASE_URL set to empty: a deployment without a drafting model
+        raise DraftError("no drafting model is configured on this deployment")
     headers = {"Authorization": f"Bearer {API_KEY}"} if API_KEY else {}
     try:
         response = httpx.post(f"{BASE_URL}/chat/completions", json=request, headers=headers, timeout=TIMEOUT)
