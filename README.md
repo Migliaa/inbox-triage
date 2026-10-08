@@ -21,6 +21,9 @@ which provides the mock client API (`mock_api/`) and the eight emails (`fixtures
 - Tracing and evaluation with LangSmith, optional: graph runs, the service's decisions, drafts
   and human verdicts, and `python -m evals.langsmith_eval` to run the decider on the emails as
   an experiment. Without a key nothing is sent.
+- `Dockerfile`, `mock_api/Dockerfile`, `compose.yaml`: the mock API and the service as two
+  containers, the model in a volume, keys passed at start.
+- `.github/workflows/tests.yml`: the tests run on GitHub Actions at every push.
 - `DECISIONS.md`: what was decided and why, with the results on the eight emails and on eight
   probe emails. Both are single runs on a handful of emails: they show the mechanism, they do not
   measure accuracy.
@@ -29,7 +32,20 @@ which provides the mock client API (`mock_api/`) and the eight emails (`fixtures
 
 ## Run it
 
-Python 3.12. The first start downloads the decision model (about 790 MB).
+With Docker (see D16 in `DECISIONS.md`):
+
+```bash
+docker compose up --build
+```
+
+Then open http://localhost:8000. The first build downloads about 500 MB of images and
+libraries; the first start downloads the decision model (about 790 MB) into a volume. Reply
+drafts use a model served on the host at port 1234 (LM Studio) when there is one, a fixed
+template otherwise. `docker compose down` stops everything and clears the state.
+
+![The service container in Docker Desktop, with its log](docs/img/docker-lab-logs.png)
+
+Without Docker: Python 3.12. The first start downloads the decision model.
 
 ```bash
 python -m venv .venv
@@ -47,4 +63,4 @@ Then open http://127.0.0.1:8000 (the API reference is at `/docs`).
 
 ## Still to come
 
-Docker, CI, a public deployment.
+A public deployment.

@@ -271,3 +271,26 @@ beyond the package index. What it guards is the behaviour around the models (the
 the token separation, the failure handling), which is the part a code change can break. Model
 quality is not checked in CI: that is what `evals.run` and the LangSmith experiments are for,
 and they need the model on a machine that can run it.
+
+## D16 · Two containers and a volume for the model
+
+`docker compose up --build` starts the mock API and the service as two containers, so the
+system runs the same on a machine that has Docker and nothing else.
+
+- **Two images.** The mock API stands for the client's system, so it is a service of its own
+  with only FastAPI inside (55 MB to download). The triage service carries torch and is larger
+  (413 MB compressed, 1.9 GB on disk). torch is installed from the CPU-only index: the default
+  Linux wheel bundles GPU libraries that this model does not use.
+- **The model is not in the image.** It is downloaded on first start into a named volume
+  (about 790 MB) and survives rebuilds. Baking it in would double the image and download it
+  again at every change of dependencies.
+- **Keys stay outside.** `.dockerignore` keeps `.env` out of the build; compose passes it to
+  the container at start, and the file is optional.
+- **The drafting model stays on the host.** The container reaches LM Studio through
+  `host.docker.internal`; when it is not there, replies fall back to the template (D11).
+- **State is reset together.** The ledger lives inside the container, so `docker compose down`
+  clears it along with the mock API's memory. A ledger that outlived the system it describes
+  would refuse actions that were never received.
+
+CI does not build the images: the tests do not need them, and a build with torch on every push
+would cost minutes to check a file that rarely changes.

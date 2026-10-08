@@ -1,0 +1,19 @@
+# Keys and local state never enter an image.
+.env
+ledger.json
+.langgraph_api/
+
+.git/
+.github/
+.venv/
+.claude/
+.pytest_cache/
+**/__pycache__/
+**/*.pyc
+
+docs/
+tests/
+scripts/
+*.md
+*.bat
+corso-img/

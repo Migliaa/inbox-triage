@@ -1,0 +1,36 @@
+# docker compose up --build, then open http://localhost:8000
+name: inbox-triage
+
+services:
+  mock-api:
+    build:
+      context: .
+      dockerfile: mock_api/Dockerfile
+    ports:
+      - "8099:8099"
+
+  lab:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      API_BASE_URL: http://mock-api:8099
+      # The drafting model stays on the host (LM Studio). Unreachable is fine:
+      # replies fall back to the fixed template.
+      LLM_BASE_URL: http://host.docker.internal:1234/v1
+      # Inside the container, so the ledger and the mock API are reset together by `down`.
+      LEDGER_PATH: /tmp/ledger.json
+    # Optional keys (LangSmith) are passed at start and never copied into the image.
+    env_file:
+      - path: .env
+        required: false
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - models:/models
+    depends_on:
+      - mock-api
+
+volumes:
+  # The decision model (about 790 MB), downloaded once.
+  models:

@@ -115,7 +115,7 @@ def build_graph(
     def approval(state: TriageState) -> dict:
         # On resume LangGraph runs this node again from the top, so it must do nothing
         # but ask: the slow draft and the writes live in the nodes before and after.
-        pending = [a for a in state["actions"] if a["key"] not in ledger]
+        pending = [a for a in state.get("actions", []) if a["key"] not in ledger]
         if not pending:
             return {"verdicts": {}}
         verdicts = interrupt({
@@ -129,9 +129,9 @@ def build_graph(
 
     def execute_node(state: TriageState) -> dict:
         executed, skipped = [], []
-        for raw in state["actions"]:
+        for raw in state.get("actions", []):
             action = ProposedAction(**raw)
-            verdict = state["verdicts"].get(action.kind, False)
+            verdict = state.get("verdicts", {}).get(action.kind, False)
             if action.key in ledger or verdict is False or verdict is None:
                 skipped.append(action.key)
                 continue
